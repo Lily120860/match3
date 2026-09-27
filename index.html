@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🐾 动物消消乐</title>
+<style>
+  :root{
+    --bs: min(92vw, 62vh, 500px); /* 棋盘边长 */
+    --pink: #ff8fab;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+  body{
+    font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background: linear-gradient(160deg,#ffe5ec 0%,#ffd6a5 50%,#caffbf 100%);
+    display:flex; justify-content:center;
+    min-height:100vh; user-select:none;
+    overflow-x:hidden;
+  }
+  #app{ width:var(--bs); padding:12px 0 24px; position:relative; z-index:2; }
+
+  /* ===== 动态可爱背景 ===== */
+  #bg{
+    position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none;
+  }
+  #bg .gradient{
+    position:absolute; inset:-25%;
+    background:linear-gradient(160deg,#ffe5ec 0%,#ffd6a5 25%,#caffbf 50%,#c8e7ff 75%,#ffe5ec 100%);
+    background-size:400% 400%;
+    animation:bgShift 22s ease-in-out infinite;
+  }
+  @keyframes bgShift{
+    0%{ background-position:0% 50%; }
+    50%{ background-position:100% 50%; }
+    100%{ background-position:0% 50%; }
+  }
+  .blob{
+    position:absolute; border-radius:50%; filter:blur(36px); opacity:.55;
+    animation:blobFloat 12s ease-in-out infinite alternate;
+  }
+  @keyframes blobFloat{
+    from{ transform:translate(0,0) scale(1); }
+    to{ transform:translate(36px,-44px) scale(1.18); }
+  }
+  .cloud{
+    position:absolute; opacity:.85;
+    animation:drift linear infinite;
+  }
+  @keyframes drift{
+    from{ transform:translateX(-30vw); }
+    to{ transform:translateX(130vw); }
+  }
+  .p-float{
+    position:absolute; bottom:-50px; opacity:0;
+    animation-name:floatUp; animation-timing-function:linear;
+    animation-iteration-count:infinite;
+  }
+  @keyframes floatUp{
+    0%{ transform:translateY(0) rotate(0deg); opacity:0; }
+    10%{ opacity:.85; }
+    85%{ opacity:.55; }
+    100%{ transform:translateY(-112vh) rotate(30deg); opacity:0; }
+  }
+  .twinkle{
+    position:absolute; animation:tw ease-in-out infinite;
+  }
+  @keyframes tw{
+    0%,100%{ transform:scale(.6) rotate(-8deg); opacity:.3; }
+    50%{ transform:scale(1.2) rotate(8deg); opacity:1; }
+  }
+  h1{ animation:h1bob 3.2s ease-in-out infinite; }
+  @keyframes h1bob{
+    0%,100%{ transform:translateY(0) rotate(-1deg); }
+    50%{ transform:translateY(-5px) rotate(1.5deg); }
+  }
+
+  h1{
+    text-align:center; font-size:calc(var(--bs)/14);
+    color:#6d4c41; margin:4px 0 10px;
+    text-shadow:0 2px 0 rgba(255,255,255,.6);
+  }
+
+  /* 顶部计分栏 */
+  #hud{
+    display:flex; gap:8px; align-items:center; margin-bottom:10px;
+  }
+  .score-box{
+    flex:1; background:rgba(255,255,255,.75); border-radius:14px;
+    padding:6px 10px; text-align:center;
+    box-shadow:0 2px 8px rgba(109,76,65,.12);
+  }
+  .score-box .label{ display:block; font-size:12px; color:#8d6e63; }
+  .score-box .val{ font-size:calc(var(--bs)/16); font-weight:800; color:#d84315; }
+  .score-box .val.bump{ animation:bump .3s ease; }
+  @keyframes bump{ 50%{ transform:scale(1.3); } }
+  #restart{
+    border:none; background:#ff8fab; color:#fff; font-weight:700;
+    font-size:14px; padding:10px 14px; border-radius:14px; cursor:pointer;
+    box-shadow:0 3px 0 #e56a8a;
+  }
+  #restart:active{ transform:translateY(2px); box-shadow:0 1px 0 #e56a8a; }
+
+  /* 棋盘 */
+  #board{
+    position:relative; width:var(--bs); height:var(--bs);
+    background:rgba(255,255,255,.5); border-radius:16px;
+    box-shadow:inset 0 0 0 3px rgba(255,255,255,.8), 0 6px 18px rgba(109,76,65,.18);
+    padding:0;
+  }
+  .tile{
+    position:absolute; left:0; top:0;
+    width:12.5%; height:12.5%;
+    display:flex; align-items:center; justify-content:center;
+    transition: transform .25s ease;
+    cursor:pointer; will-change:transform;
+    touch-action: manipulation;
+    z-index:1;
+  }
+  .face{
+    width:88%; height:88%;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:22%;
+    font-size:calc(var(--bs)/8*0.6);
+    line-height:1;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .tile.selected .face{
+    transform:scale(1.12);
+    box-shadow:0 0 0 3px #ffb703 inset, 0 0 12px rgba(255,183,3,.9);
+  }
+  .tile.clearing{ z-index:3; }
+  .tile.clearing .face{ animation:pop .32s ease forwards; }
+  @keyframes pop{
+    0%{ transform:scale(1); }
+    40%{ transform:scale(1.3); filter:brightness(1.4); }
+    100%{ transform:scale(0); opacity:0; }
+  }
+  .tile.enter .face{ animation:dropin .3s ease backwards; }
+  @keyframes dropin{ from{ transform:scale(.3); opacity:0; } }
+
+  .float-pts{
+    position:absolute; left:50%; top:42%;
+    transform:translateX(-50%);
+    font-weight:800; font-size:calc(var(--bs)/13);
+    color:#e53935; text-shadow:0 2px 6px rgba(0,0,0,.18);
+    pointer-events:none; z-index:9; white-space:nowrap;
+    animation:rise .9s ease forwards;
+  }
+  @keyframes rise{
+    0%{ opacity:0; margin-top:14px; }
+    20%{ opacity:1; }
+    100%{ opacity:0; margin-top:-56px; }
+  }
+
+  /* 提示弹窗 */
+  #overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.35);
+    display:flex; align-items:center; justify-content:center; z-index:99;
+  }
+  #overlay.hidden{ display:none; }
+  #dialog{
+    background:#fff; border-radius:18px; padding:24px 28px;
+    text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.25);
+    max-width:82vw;
+  }
+  #dialog p{ font-size:17px; color:#5d4037; margin-bottom:16px; line-height:1.6; }
+  #dialog .btns{ display:flex; gap:12px; justify-content:center; }
+  #dialog button{
+    border:none; padding:10px 20px; border-radius:12px;
+    font-size:15px; font-weight:700; cursor:pointer;
+  }
+  #btn-restart{ background:#ff8fab; color:#fff; }
+  #btn-continue{ background:#b2dfdb; color:#00695c; }
+
+  #tip{
+    text-align:center; font-size:13px; color:#8d6e63; margin-top:12px; line-height:1.6;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>🐾 动物消消乐</h1>
+  <div id="hud">
+    <div class="score-box"><span class="label">得分</span><span class="val" id="score">0</span></div>
+    <div class="score-box"><span class="label">最高分</span><span class="val" id="best">0</span></div>
+    <button id="restart">重新开始</button>
+  </div>
+  <div id="board"></div>
+  <p id="tip">点击两个相邻的动物交换位置，凑齐 3 个以上相同即可消除，连续消除有连击加成！</p>
+
+  <div id="overlay" class="hidden">
+    <div id="dialog">
+      <p id="dialog-text"></p>
+      <div class="btns">
+        <button id="btn-restart">重新开始</button>
+        <button id="btn-continue">再玩一会</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var ANIMALS = ['🐱','🐶','🐼','🐨','🐯','🦁','🐮','🐷'];
+  var SIZE = 8;
+  var KEY_SCORE = 'match3_score', KEY_BEST = 'match3_best';
+
+  var boardEl = document.getElementById('board');
+  var scoreEl = document.getElementById('score');
+  var bestEl  = document.getElementById('best');
+  var overlay = document.getElementById('overlay');
+  var dialogText = document.getElementById('dialog-text');
+
+  var grid = [];        // grid[r][c] = { type, el }
+  var selected = null;  // { r, c }
+  var busy = false;
+  var score = parseInt(localStorage.getItem(KEY_SCORE) || '0', 10) || 0;
+  var best  = parseInt(localStorage.getItem(KEY_BEST)  || '0', 10) || 0;
+
+  function wait(ms){ return new Promise(function(res){ setTimeout(res, ms); }); }
+  function randType(){ return Math.floor(Math.random() * ANIMALS.length); }
+  function types(){ return grid.map(function(row){ return row.map(function(t){ return t.type; }); }); }
+  function setPos(t, r, c){ t.el.style.transform = 'translate(' + (c*100) + '%,' + (r*100) + '%)'; }
+
+  function updateHud(bump){
+    scoreEl.textContent = score;
+    bestEl.textContent = best;
+    if(bump){
+      scoreEl.classList.remove('bump');
+      void scoreEl.offsetWidth;
+      scoreEl.classList.add('bump');
+    }
+  }
+  function addScore(pts){
+    score += pts;
+    if(score > best){ best = score; localStorage.setItem(KEY_BEST, best); }
+    localStorage.setItem(KEY_SCORE, score);
+    updateHud(true);
+  }
+
+  /* ---------- 匹配检测 ---------- */
+  // 返回 Set（key = r*SIZE+c），检测横竖方向 >=3 连
+  function findMatches(g){
+    g = g || types();
+    var m = {}, count = 0, r, c, run, k;
+    function add(rr, cc){ var key = rr*SIZE + cc; if(!m[key]){ m[key] = true; count++; } }
+    for(r = 0; r < SIZE; r++){
+      run = 1;
+      for(c = 1; c <= SIZE; c++){
+        var curH = c < SIZE ? g[r][c] : null;
+        if(curH !== null && g[r][c-1] !== null && curH === g[r][c-1]) run++;
+        else{
+          if(run >= 3) for(k = c - run; k < c; k++) add(r, k);
+          run = 1;
+        }
+      }
+    }
+    for(c = 0; c < SIZE; c++){
+      run = 1;
+      for(r = 1; r <= SIZE; r++){
+        var curV = r < SIZE ? g[r][c] : null;
+        if(curV !== null && g[r-1][c] !== null && curV === g[r-1][c]) run++;
+        else{
+          if(run >= 3) for(k = r - run; k < r; k++) add(k, c);
+          run = 1;
+        }
+      }
+    }
+    return { set: m, count: count };
+  }
+
+  // (r,c) 处沿横竖数连子数，>=3 则成消
+  function lineAt(g, r, c){
+    var t = g[r][c], n, i;
+    if(t === null || t === undefined) return false;
+    n = 1;
+    for(i = c-1; i >= 0 && g[r][i] === t; i--) n++;
+    for(i = c+1; i < SIZE && g[r][i] === t; i++) n++;
+    if(n >= 3) return true;
+    n = 1;
+    for(i = r-1; i >= 0 && g[i][c] === t; i--) n++;
+    for(i = r+1; i < SIZE && g[i][c] === t; i++) n++;
+    return n >= 3;
+  }
+
+  function hasMove(g){
+    g = g || types();
+    var r, c, tmp;
+    for(r = 0; r < SIZE; r++){
+      for(c = 0; c < SIZE; c++){
+        if(c < SIZE - 1){
+          tmp = g[r][c]; g[r][c] = g[r][c+1]; g[r][c+1] = tmp;
+          var okH = lineAt(g, r, c) || lineAt(g, r, c+1);
+          tmp = g[r][c]; g[r][c] = g[r][c+1]; g[r][c+1] = tmp;
+          if(okH) return true;
+        }
+        if(r < SIZE - 1){
+          tmp = g[r][c]; g[r][c] = g[r+1][c]; g[r+1][c] = tmp;
+          var okV = lineAt(g, r, c) || lineAt(g, r+1, c);
+          tmp = g[r][c]; g[r][c] = g[r+1][c]; g[r+1][c] = tmp;
+          if(okV) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /* ---------- 棋盘构建 ---------- */
+  function randTypeAvoiding(g, r, c){
+    var t, guard = 0;
+    do{
+      t = randType();
+      guard++;
+    }while(guard < 50 && (
+      (c >= 2 && g[r][c-1] === t && g[r][c-2] === t) ||
+      (r >= 2 && g[r-1][c] === t && g[r-2][c] === t)
+    ));
+    return t;
+  }
+
+  function makeTileEl(type, r, c, startRow){
+    var el = document.createElement('div');
+    el.className = 'tile' + (startRow === undefined ? ' enter' : '');
+    var face = document.createElement('span');
+    face.className = 'face';
+    face.textContent = ANIMALS[type];
+    face.style.background = ((r + c) % 2 === 0) ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.12)';
+    el.appendChild(face);
+    el.style.transform = 'translate(' + (c*100) + '%,' + ((startRow !== undefined ? startRow : r) * 100) + '%)';
+    boardEl.appendChild(el);
+    return el;
+  }
+
+  function buildBoard(){
+    boardEl.innerHTML = '';
+    grid = [];
+    var g, r, c, tries = 0;
+    do{
+      g = [];
+      for(r = 0; r < SIZE; r++){
+        g[r] = [];
+        for(c = 0; c < SIZE; c++) g[r][c] = randTypeAvoiding(g, r, c);
+      }
+      tries++;
+    }while(tries < 60 && !hasMove(g));
+
+    for(r = 0; r < SIZE; r++){
+      grid[r] = [];
+      for(c = 0; c < SIZE; c++){
+        grid[r][c] = { type: g[r][c], el: makeTileEl(g[r][c], r, c) };
+      }
+    }
+  }
+
+  /* ---------- 交互 ---------- */
+  function findPos(el){
+    for(var r = 0; r < SIZE; r++)
+      for(var c = 0; c < SIZE; c++)
+        if(grid[r][c] && grid[r][c].el === el) return { r: r, c: c };
+    return null;
+  }
+  function clearSelection(){
+    if(selected){
+      var t = grid[selected.r][selected.c];
+      if(t) t.el.classList.remove('selected');
+    }
+    selected = null;
+  }
+
+  boardEl.addEventListener('click', function(e){
+    if(busy) return;
+    var el = e.target.closest ? e.target.closest('.tile') : null;
+    if(!el) return;
+    var pos = findPos(el);
+    if(!pos) return;
+
+    if(!selected){
+      selected = pos;
+      el.classList.add('selected');
+    }else if(selected.r === pos.r && selected.c === pos.c){
+      clearSelection();
+    }else if(Math.abs(selected.r - pos.r) + Math.abs(selected.c - pos.c) === 1){
+      var a = selected;
+      clearSelection();
+      trySwap(a, pos);
+    }else{
+      clearSelection();
+      selected = pos;
+      el.classList.add('selected');
+    }
+  });
+
+  function swapCells(a, b){
+    var t = grid[a.r][a.c];
+    grid[a.r][a.c] = grid[b.r][b.c];
+    grid[b.r][b.c] = t;
+    setPos(grid[a.r][a.c], a.r, a.c);
+    setPos(grid[b.r][b.c], b.r, b.c);
+  }
+
+  function floatPts(text){
+    var d = document.createElement('div');
+    d.className = 'float-pts';
+    d.textContent = text;
+    boardEl.appendChild(d);
+    setTimeout(function(){ d.remove(); }, 950);
+  }
+
+  async function trySwap(a, b){
+    busy = true;
+    swapCells(a, b);
+    await wait(260);
+
+    if(findMatches().count === 0){
+      // 无效交换，换回去
+      swapCells(a, b);
+      await wait(260);
+      busy = false;
+      return;
+    }
+
+    var combo = 0;
+    while(true){
+      var res = findMatches();
+      if(res.count === 0) break;
+      combo++;
+      var pts = res.count * 10 * combo;
+      addScore(pts);
+      floatPts('+' + pts + (combo > 1 ? '（连击 x' + combo + '）' : ''));
+
+      var r, c;
+      for(var key in res.set){
+        key = parseInt(key, 10);
+        r = Math.floor(key / SIZE); c = key % SIZE;
+        var t = grid[r][c];
+        if(t){ t.el.classList.add('clearing'); }
+      }
+      await wait(330);
+
+      for(key in res.set){
+        key = parseInt(key, 10);
+        r = Math.floor(key / SIZE); c = key % SIZE;
+        if(grid[r][c]){
+          grid[r][c].el.remove();
+          grid[r][c] = null;
+        }
+      }
+
+      applyGravity();
+      await wait(380);
+    }
+
+    busy = false;
+    checkDeadlock();
+  }
+
+  /* ---------- 下落填充 ---------- */
+  function applyGravity(){
+    for(var c = 0; c < SIZE; c++){
+      var write = SIZE - 1, r;
+      // 现有方块下落
+      for(r = SIZE - 1; r >= 0; r--){
+        var t = grid[r][c];
+        if(t){
+          if(write !== r){
+            grid[write][c] = t;
+            grid[r][c] = null;
+          }
+          setPos(grid[write][c], write, c);
+          write--;
+        }
+      }
+      // 顶部生成新方块，从棋盘上方滑入
+      for(r = write; r >= 0; r--){
+        var type = randType();
+        var el = makeTileEl(type, r, c, r - write - 1);
+        grid[r][c] = { type: type, el: el };
+        (function(rr, cc, tile){
+          requestAnimationFrame(function(){
+            requestAnimationFrame(function(){ setPos(tile, rr, cc); });
+          });
+        })(r, c, grid[r][c]);
+      }
+    }
+  }
+
+  /* ---------- 死局检测 ---------- */
+  function checkDeadlock(){
+    if(hasMove()) return;
+    dialogText.textContent = '棋盘上已经没有可以消除的组合啦！要重新开始，还是自动换一批动物？（得分保留）';
+    overlay.classList.remove('hidden');
+  }
+
+  function reshuffle(){
+    overlay.classList.add('hidden');
+    var all = [], r, c;
+    for(r = 0; r < SIZE; r++) for(c = 0; c < SIZE; c++) all.push(grid[r][c].type);
+    var g, tries = 0;
+    do{
+      for(var i = all.length - 1; i > 0; i--){
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = all[i]; all[i] = all[j]; all[j] = tmp;
+      }
+      g = [];
+      var idx = 0;
+      for(r = 0; r < SIZE; r++){
+        g[r] = [];
+        for(c = 0; c < SIZE; c++) g[r][c] = all[idx++];
+      }
+      tries++;
+    }while(tries < 200 && (findMatches(g).count > 0 || !hasMove(g)));
+
+    for(r = 0; r < SIZE; r++){
+      for(c = 0; c < SIZE; c++){
+        var t = grid[r][c];
+        t.type = g[r][c];
+        var face = t.el.firstChild;
+        face.textContent = ANIMALS[t.type];
+        t.el.classList.remove('enter');
+        void t.el.offsetWidth;
+        t.el.classList.add('enter');
+      }
+    }
+  }
+
+  function restart(){
+    overlay.classList.add('hidden');
+    score = 0;
+    localStorage.setItem(KEY_SCORE, '0');
+    updateHud(false);
+    clearSelection();
+    buildBoard();
+  }
+
+  document.getElementById('restart').addEventListener('click', function(){ if(!busy) restart(); });
+  document.getElementById('btn-restart').addEventListener('click', function(){ if(!busy) restart(); });
+  document.getElementById('btn-continue').addEventListener('click', function(){ if(!busy) reshuffle(); });
+
+  /* ---------- 启动 ---------- */
+  updateHud(false);
+  buildBoard();
+
+  /* ---------- 动态可爱背景 ---------- */
+  (function makeCuteBg(){
+    var bg = document.createElement('div');
+    bg.id = 'bg';
+
+    // 1. 流动渐变底
+    var grad = document.createElement('div');
+    grad.className = 'gradient';
+    bg.appendChild(grad);
+
+    // 2. 柔和彩色光斑
+    var blobColors = [
+      'radial-gradient(circle,rgba(255,143,171,.75),rgba(255,143,171,0) 70%)',
+      'radial-gradient(circle,rgba(255,214,165,.75),rgba(255,214,165,0) 70%)',
+      'radial-gradient(circle,rgba(202,255,191,.7),rgba(202,255,191,0) 70%)',
+      'radial-gradient(circle,rgba(200,231,255,.75),rgba(200,231,255,0) 70%)',
+      'radial-gradient(circle,rgba(225,190,255,.7),rgba(225,190,255,0) 70%)'
+    ];
+    for(var i = 0; i < 6; i++){
+      var blob = document.createElement('div');
+      blob.className = 'blob';
+      var size = 180 + Math.random() * 220;
+      blob.style.width = blob.style.height = size + 'px';
+      blob.style.left = (Math.random() * 90) + '%';
+      blob.style.top = (Math.random() * 85) + '%';
+      blob.style.background = blobColors[i % blobColors.length];
+      blob.style.animationDuration = (10 + Math.random() * 10) + 's';
+      blob.style.animationDelay = (-Math.random() * 10) + 's';
+      bg.appendChild(blob);
+    }
+
+    // 3. 飘过的云朵
+    var cloudEmoji = ['☁️','☁️','☁️','🌤️'];
+    for(var j = 0; j < 4; j++){
+      var cloud = document.createElement('div');
+      cloud.className = 'cloud';
+      cloud.textContent = cloudEmoji[j];
+      cloud.style.fontSize = (34 + Math.random() * 34) + 'px';
+      cloud.style.top = (4 + Math.random() * 30) + '%';
+      cloud.style.animationDuration = (34 + Math.random() * 30) + 's';
+      cloud.style.animationDelay = (-Math.random() * 40) + 's';
+      bg.appendChild(cloud);
+    }
+
+    // 4. 闪烁的星星
+    var twEmoji = ['✨','⭐','💖','✨','⭐'];
+    for(var k = 0; k < 5; k++){
+      var tw = document.createElement('div');
+      tw.className = 'twinkle';
+      tw.textContent = twEmoji[k];
+      tw.style.fontSize = (16 + Math.random() * 14) + 'px';
+      tw.style.left = (Math.random() * 92) + '%';
+      tw.style.top = (Math.random() * 88) + '%';
+      tw.style.animationDuration = (1.8 + Math.random() * 2.2) + 's';
+      tw.style.animationDelay = (-Math.random() * 3) + 's';
+      bg.appendChild(tw);
+    }
+
+    // 5. 冉冉上升的小装饰
+    var parts = ['🐾','✨','⭐','🌈','🫧','🎀','💗','🦴','🐟','🧸'];
+    var n = window.innerWidth < 480 ? 12 : 18;
+    for(var m = 0; m < n; m++){
+      var p = document.createElement('div');
+      p.className = 'p-float';
+      p.textContent = parts[Math.floor(Math.random() * parts.length)];
+      var dur = 11 + Math.random() * 12;
+      p.style.left = (Math.random() * 96) + '%';
+      p.style.fontSize = (14 + Math.random() * 18) + 'px';
+      p.style.animationDuration = dur + 's';
+      p.style.animationDelay = (-Math.random() * dur) + 's';
+      bg.appendChild(p);
+    }
+
+    document.body.insertBefore(bg, document.body.firstChild);
+  })();
+})();
+</script>
+</body>
+</html>
